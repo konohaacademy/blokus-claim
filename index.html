@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ブロックス・クレイム</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#111827;color:#f3f4f6;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:12px;gap:10px}
+h1{font-size:1.6rem;letter-spacing:.05em;color:#fff;text-align:center}
+
+/* Title */
+#title-screen{display:flex;flex-direction:column;align-items:center;gap:16px;padding:32px 16px;text-align:center}
+#title-screen p{color:#9ca3af;max-width:380px;line-height:1.6;font-size:.95rem}
+.mode-btn{padding:12px 32px;font-size:1.1rem;border:none;border-radius:8px;cursor:pointer;font-weight:700;transition:transform .1s,opacity .1s}
+.mode-btn:hover{transform:scale(1.04);opacity:.9}
+.mode-btn.primary{background:#3b82f6;color:#fff}
+.mode-btn.secondary{background:#374151;color:#d1d5db}
+
+/* Game screen */
+#game-screen{display:none;flex-direction:column;align-items:center;gap:8px;width:100%}
+.score-row{display:flex;width:560px;justify-content:space-between;align-items:center;gap:8px}
+.pinfo{flex:1;padding:8px 12px;border-radius:8px;border:2px solid transparent;transition:border-color .2s}
+.pinfo.active{border-color:#fff}
+.pinfo h3{font-size:.85rem;margin-bottom:3px;opacity:.8}
+.pinfo .score{font-size:1.5rem;font-weight:700}
+.pinfo .turns{font-size:.8rem;opacity:.7;margin-top:2px}
+.pinfo.p1{background:#1e3a5f;border-left:4px solid #60a5fa}
+.pinfo.p2{background:#3d1515;border-left:4px solid #f87171}
+.turn-label{font-size:.9rem;font-weight:600;color:#d1d5db;text-align:center;min-width:90px}
+
+canvas{cursor:crosshair;display:block;border-radius:4px}
+
+.ability-row{display:flex;width:560px;justify-content:space-between;gap:8px}
+.abil-group{flex:1;display:flex;flex-direction:column;gap:6px}
+.abil-group h4{font-size:.75rem;opacity:.6;text-transform:uppercase;letter-spacing:.05em}
+.abil-btns{display:flex;gap:6px}
+.abil-btn{padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:600;transition:opacity .15s,transform .1s}
+.abil-btn:hover:not(:disabled){transform:scale(1.05)}
+.abil-btn:disabled{opacity:.35;cursor:not-allowed}
+.abil-btn.xray{background:#7c3aed;color:#fff}
+.abil-btn.skip{background:#0891b2;color:#fff}
+.abil-btn.active{box-shadow:0 0 0 3px #fff}
+
+.msg-bar{height:28px;font-size:.9rem;color:#fbbf24;text-align:center;font-weight:600}
+
+/* Gameover */
+#gameover-screen{display:none;flex-direction:column;align-items:center;gap:16px;padding:32px 16px;text-align:center}
+#gameover-screen h2{font-size:1.8rem}
+.final-scores{display:flex;gap:24px;font-size:1.1rem}
+.final-scores span{padding:8px 20px;border-radius:8px;background:#1f2937}
+</style>
+</head>
+<body>
+<h1>ブロックス・クレイム</h1>
+
+<div id="title-screen">
+  <p>20×20のボードに敷き詰められたピースを取り合う戦略ゲーム。<br>
+  隣り合う同色ピースの境界は見えない。<br>
+  各プレイヤー<strong>20回</strong>の手番でマス数を競え！</p>
+  <button class="mode-btn primary" onclick="startGame('2p')">2人で対戦</button>
+  <button class="mode-btn secondary" onclick="startGame('1p')">1人でAIと対戦</button>
+</div>
+
+<div id="game-screen">
+  <div class="score-row">
+    <div class="pinfo p1 active" id="pinfo0">
+      <h3>P1（青）</h3>
+      <div class="score" id="score0">0</div>
+      <div class="turns" id="turns0">残り 20回</div>
+    </div>
+    <div class="turn-label" id="turn-label">P1の番</div>
+    <div class="pinfo p2" id="pinfo1">
+      <h3>P2（赤）</h3>
+      <div class="score" id="score1">0</div>
+      <div class="turns" id="turns1">残り 20回</div>
+    </div>
+  </div>
+  <canvas id="canvas" width="560" height="560"></canvas>
+  <div class="ability-row">
+    <div class="abil-group">
+      <h4>P1 特殊効果</h4>
+      <div class="abil-btns">
+        <button class="abil-btn xray" id="xray0" onclick="useAbility(0,'xray')">🔍 透視</button>
+        <button class="abil-btn skip" id="skip0" onclick="useAbility(0,'skip')">⏭ スキップ</button>
+      </div>
+    </div>
+    <div class="abil-group" style="align-items:flex-end">
+      <h4>P2 特殊効果</h4>
+      <div class="abil-btns">
+        <button class="abil-btn xray" id="xray1" onclick="useAbility(1,'xray')">🔍 透視</button>
+        <button class="abil-btn skip" id="skip1" onclick="useAbility(1,'skip')">⏭ スキップ</button>
+      </div>
+    </div>
+  </div>
+  <div class="msg-bar" id="msg-bar"></div>
+</div>
+
+<div id="gameover-screen">
+  <h2 id="result-title"></h2>
+  <div class="final-scores">
+    <span id="final0"></span>
+    <span id="final1"></span>
+  </div>
+  <button class="mode-btn primary" onclick="location.reload()">もう一度</button>
+</div>
+
+<script>
+'use strict';
+
+const GRID = 20;
+const CELL = 28;
+const W = GRID * CELL;
+const MAX_TURNS = 20;
+
+// Piece colors: yellow, red(orange), blue, green
+const PC = ['#F9A825','#E53935','#1E88E5','#43A047'];
+const PC_DARK = ['#b37d00','#8B0000','#0d47a1','#1b5e20'];
+const PC_HOVER = ['#FFC107','#EF5350','#42A5F5','#66BB6A'];
+// Player indicator colors
+const PL = ['#60a5fa','#f87171'];
+
+// All 21 standard Blokus piece shapes
+const SHAPES = [
+  [[0,0]],
+  [[0,0],[0,1]],
+  [[0,0],[0,1],[0,2]],
+  [[0,0],[1,0],[1,1]],
+  [[0,0],[0,1],[0,2],[0,3]],
+  [[0,0],[0,1],[1,0],[1,1]],
+  [[0,0],[0,1],[0,2],[1,1]],
+  [[0,0],[0,1],[0,2],[1,0]],
+  [[0,0],[0,1],[1,1],[1,2]],
+  [[0,1],[0,2],[1,0],[1,1],[2,1]],
+  [[0,0],[0,1],[0,2],[0,3],[0,4]],
+  [[0,0],[1,0],[2,0],[3,0],[3,1]],
+  [[0,0],[1,0],[1,1],[2,1],[3,1]],
+  [[0,0],[0,1],[1,0],[1,1],[2,0]],
+  [[0,0],[0,1],[0,2],[1,1],[2,1]],
+  [[0,0],[0,2],[1,0],[1,1],[1,2]],
+  [[0,0],[1,0],[2,0],[2,1],[2,2]],
+  [[0,0],[1,0],[1,1],[2,1],[2,2]],
+  [[0,1],[1,0],[1,1],[1,2],[2,1]],
+  [[0,1],[1,0],[1,1],[2,1],[3,1]],
+  [[0,0],[0,1],[1,1],[2,1],[2,2]],
+];
+
+// --- Piece utilities ---
+function rotateCW(cells) {
+  const r = cells.map(([row,col]) => [col, -row]);
+  const minR = Math.min(...r.map(([x])=>x));
+  const minC = Math.min(...r.map(([,y])=>y));
+  return r.map(([x,y]) => [x-minR, y-minC]);
+}
+
+function reflectH(cells) {
+  const r = cells.map(([row,col]) => [row, -col]);
+  const minC = Math.min(...r.map(([,y])=>y));
+  return r.map(([x,y]) => [x, y-minC]);
+}
+
+function cellsKey(cells) {
+  return cells.map(([r,c])=>`${r},${c}`).sort().join('|');
+}
+
+function getOrientations(shape) {
+  const seen = new Set();
+  const result = [];
+  for (let flip = 0; flip < 2; flip++) {
+    let cur = flip === 0 ? shape : reflectH(shape);
+    for (let rot = 0; rot < 4; rot++) {
+      const key = cellsKey(cur);
+      if (!seen.has(key)) { seen.add(key); result.push(cur.map(x=>[...x])); }
+      cur = rotateCW(cur);
+    }
+  }
+  return result;
+}
+
+function shuffle(arr) {
+  for (let i = arr.length-1; i > 0; i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+  return arr;
+}
+
+// --- Board generation ---
+function generateBoard() {
+  const board = Array.from({length:GRID}, ()=>Array(GRID).fill(-1));
+  const pieces = [];
+  let pid = 0;
+
+  const pool = [];
+  for (let color = 0; color < 4; color++) {
+    for (const shape of SHAPES) pool.push({color, shape, orients: getOrientations(shape)});
+  }
+  shuffle(pool);
+
+  // Scanline: fill topmost-leftmost empty cell with next fitting piece
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      if (board[r][c] !== -1 || pool.length === 0) continue;
+      let placed = false;
+      for (let pi = 0; pi < pool.length && !placed; pi++) {
+        const {color, orients} = pool[pi];
+        for (const orient of orients) {
+          const minR = Math.min(...orient.map(([row])=>row));
+          const topRow = orient.filter(([row])=>row===minR);
+          const minC = Math.min(...topRow.map(([,col])=>col));
+          const dr = r - minR, dc = c - minC;
+          const cells = orient.map(([or,oc])=>[or+dr, oc+dc]);
+          if (cells.every(([cr,cc])=>cr>=0&&cr<GRID&&cc>=0&&cc<GRID&&board[cr][cc]===-1)) {
+            for (const [cr,cc] of cells) board[cr][cc] = pid;
+            pieces.push({color, cells, owner:null});
+            pid++; pool.splice(pi,1); placed = true; break;
+          }
+        }
+      }
+    }
+  }
+
+  // Fill remaining with mono (balance colors by area)
+  const areas = [0,0,0,0];
+  for (const p of pieces) areas[p.color] += p.cells.length;
+
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      if (board[r][c] === -1) {
+        const color = areas.indexOf(Math.min(...areas));
+        board[r][c] = pid;
+        pieces.push({color, cells:[[r,c]], owner:null});
+        areas[color]++;
+        pid++;
+      }
+    }
+  }
+
+  return {board, pieces};
+}
+
+// --- Game state ---
+const state = {
+  board: null, pieces: null,
+  player: 0,
+  turns: [0, 0],
+  scores: [0, 0],
+  abilities: [{xray:true, skip:true}, {xray:true, skip:true}],
+  mode: null,
+  hoverPid: null,
+  xrayPid: null, xrayTimer: null,
+  xrayMode: false,  // waiting for click to reveal
+  phase: 'title'
+};
+
+// --- UI helpers ---
+function updateUI() {
+  const p = state.player;
+  for (let i = 0; i < 2; i++) {
+    document.getElementById(`score${i}`).textContent = state.scores[i];
+    document.getElementById(`turns${i}`).textContent = `残り ${MAX_TURNS - state.turns[i]}回`;
+    document.getElementById(`pinfo${i}`).classList.toggle('active', i === p);
+    const isAI = state.mode === '1p' && i === 1;
+    document.getElementById(`xray${i}`).disabled = isAI || !state.abilities[i].xray || p !== i || state.xrayMode;
+    document.getElementById(`skip${i}`).disabled = isAI || !state.abilities[i].skip || p !== i || state.turns[i] >= MAX_TURNS;
+    document.getElementById(`xray${i}`).classList.toggle('active', state.xrayMode && p === i);
+  }
+  document.getElementById('turn-label').textContent = `P${p+1}の番`;
+}
+
+function setMsg(txt) {
+  document.getElementById('msg-bar').textContent = txt;
+}
+
+// --- Rendering ---
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function draw() {
+  ctx.clearRect(0, 0, W, W);
+
+  // Fill cells
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      const pid = state.board[r][c];
+      const p = state.pieces[pid];
+      let fill;
+      if (p.owner !== null) {
+        fill = PC_DARK[p.color];
+      } else if (pid === state.hoverPid && !state.xrayMode) {
+        fill = PC_HOVER[p.color];
+      } else {
+        fill = PC[p.color];
+      }
+      ctx.fillStyle = fill;
+      ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+
+      // Owner dot
+      if (p.owner !== null) {
+        ctx.fillStyle = PL[p.owner];
+        ctx.beginPath();
+        ctx.arc(c*CELL + CELL/2, r*CELL + CELL/2, 3.5, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Draw color-change borders
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      const col = state.pieces[state.board[r][c]].color;
+      if (c < GRID-1 && state.pieces[state.board[r][c+1]].color !== col) {
+        ctx.beginPath();
+        ctx.moveTo((c+1)*CELL, r*CELL);
+        ctx.lineTo((c+1)*CELL, (r+1)*CELL);
+        ctx.stroke();
+      }
+      if (r < GRID-1 && state.pieces[state.board[r+1][c]].color !== col) {
+        ctx.beginPath();
+        ctx.moveTo(c*CELL, (r+1)*CELL);
+        ctx.lineTo((c+1)*CELL, (r+1)*CELL);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Outer border
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(0, 0, W, W);
+
+  // Hover highlight
+  if (state.hoverPid !== null && !state.xrayMode) {
+    const p = state.pieces[state.hoverPid];
+    if (p.owner === null) {
+      drawOutline(p.cells, 'rgba(255,255,255,0.85)', 2.5);
+      drawSizeLabel(p.cells);
+    }
+  }
+
+  // Xray reveal
+  if (state.xrayPid !== null) {
+    const p = state.pieces[state.xrayPid];
+    drawOutline(p.cells, '#f0f', 3);
+    drawFill(p.cells, 'rgba(255,0,255,0.18)');
+    drawSizeLabel(p.cells);
+  }
+
+  // Xray mode cursor hint
+  if (state.xrayMode) {
+    if (state.hoverPid !== null) {
+      const p = state.pieces[state.hoverPid];
+      drawFill(p.cells, 'rgba(255,255,255,0.22)');
+    }
+  }
+}
+
+function drawOutline(cells, color, lw) {
+  const s = new Set(cells.map(([r,c])=>`${r},${c}`));
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  for (const [r, c] of cells) {
+    if (!s.has(`${r-1},${c}`)) { ctx.beginPath(); ctx.moveTo(c*CELL+1,r*CELL+1); ctx.lineTo((c+1)*CELL-1,r*CELL+1); ctx.stroke(); }
+    if (!s.has(`${r+1},${c}`)) { ctx.beginPath(); ctx.moveTo(c*CELL+1,(r+1)*CELL-1); ctx.lineTo((c+1)*CELL-1,(r+1)*CELL-1); ctx.stroke(); }
+    if (!s.has(`${r},${c-1}`)) { ctx.beginPath(); ctx.moveTo(c*CELL+1,r*CELL+1); ctx.lineTo(c*CELL+1,(r+1)*CELL-1); ctx.stroke(); }
+    if (!s.has(`${r},${c+1}`)) { ctx.beginPath(); ctx.moveTo((c+1)*CELL-1,r*CELL+1); ctx.lineTo((c+1)*CELL-1,(r+1)*CELL-1); ctx.stroke(); }
+  }
+}
+
+function drawFill(cells, color) {
+  ctx.fillStyle = color;
+  for (const [r, c] of cells) ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+}
+
+function drawSizeLabel(cells) {
+  const minC = Math.min(...cells.map(([,c])=>c));
+  const minR = Math.min(...cells.map(([r])=>r));
+  const txt = `${cells.length}マス`;
+  ctx.font = 'bold 11px sans-serif';
+  const tw = ctx.measureText(txt).width;
+  const x = minC*CELL + 2;
+  const y = minR*CELL + 14;
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(x-1, y-12, tw+4, 15);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(txt, x+1, y);
+}
+
+// --- Input handling ---
+function cellAt(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const c = Math.floor(x / CELL);
+  const r = Math.floor(y / CELL);
+  if (r >= 0 && r < GRID && c >= 0 && c < GRID) return [r, c];
+  return null;
+}
+
+canvas.addEventListener('mousemove', e => {
+  if (state.phase !== 'playing') return;
+  const cell = cellAt(e);
+  const pid = cell ? state.board[cell[0]][cell[1]] : null;
+  state.hoverPid = pid;
+  draw();
+});
+
+canvas.addEventListener('mouseleave', () => {
+  state.hoverPid = null;
+  draw();
+});
+
+canvas.addEventListener('click', e => {
+  if (state.phase !== 'playing') return;
+  if (state.mode === '1p' && state.player === 1) return; // AI's turn
+  const cell = cellAt(e);
+  if (!cell) return;
+  const [r, c] = cell;
+  const pid = state.board[r][c];
+
+  if (state.xrayMode) {
+    activateXray(pid);
+    return;
+  }
+
+  const piece = state.pieces[pid];
+  if (piece.owner !== null) { setMsg('そのピースはすでに取られています'); return; }
+
+  claimPiece(pid);
+});
+
+// --- Game actions ---
+function claimPiece(pid) {
+  const p = state.player;
+  const piece = state.pieces[pid];
+  piece.owner = p;
+  state.scores[p] += piece.cells.length;
+  state.turns[p]++;
+  setMsg(`P${p+1}が${piece.cells.length}マスのピースを獲得！`);
+  updateUI();
+  draw();
+  checkGameEnd();
+  if (state.phase === 'playing') nextTurn();
+}
+
+function nextTurn() {
+  state.player = 1 - state.player;
+  updateUI();
+  // If this player has used all turns, skip to other or end
+  if (state.turns[state.player] >= MAX_TURNS) {
+    const other = 1 - state.player;
+    if (state.turns[other] >= MAX_TURNS) { endGame(); return; }
+    state.player = other;
+    updateUI();
+  }
+  if (state.mode === '1p' && state.player === 1) {
+    setTimeout(aiTurn, 500);
+  }
+}
+
+function useAbility(player, type) {
+  if (state.player !== player) return;
+  if (!state.abilities[player][type]) return;
+  if (type === 'xray') {
+    state.xrayMode = true;
+    state.abilities[player].xray = false;
+    setMsg('透視：調べたいマスをクリックしてください');
+    updateUI(); draw();
+  } else if (type === 'skip') {
+    state.abilities[player].skip = false;
+    setMsg(`P${player+1}がスキップ（ターン消費なし）`);
+    state.player = 1 - state.player;
+    // If the receiving player also exhausted turns, end game
+    if (state.turns[state.player] >= MAX_TURNS) {
+      const other = 1 - state.player;
+      if (state.turns[other] >= MAX_TURNS) { endGame(); return; }
+      state.player = other;
+    }
+    updateUI();
+    if (state.mode === '1p' && state.player === 1) setTimeout(aiTurn, 500);
+  }
+}
+
+function activateXray(pid) {
+  state.xrayMode = false;
+  state.xrayPid = pid;
+  setMsg(`透視：${state.pieces[pid].cells.length}マスのピースを確認中（3秒）`);
+  updateUI(); draw();
+  if (state.xrayTimer) clearTimeout(state.xrayTimer);
+  state.xrayTimer = setTimeout(() => {
+    state.xrayPid = null;
+    setMsg('');
+    draw();
+  }, 3000);
+}
+
+function checkGameEnd() {
+  if (state.turns[0] >= MAX_TURNS && state.turns[1] >= MAX_TURNS) endGame();
+}
+
+function endGame() {
+  state.phase = 'gameover';
+  document.getElementById('game-screen').style.display = 'none';
+  const go = document.getElementById('gameover-screen');
+  go.style.display = 'flex';
+
+  const s0 = state.scores[0], s1 = state.scores[1];
+  let title;
+  if (s0 > s1) title = 'P1の勝利！';
+  else if (s1 > s0) title = 'P2の勝利！';
+  else title = '引き分け！';
+  document.getElementById('result-title').textContent = title;
+  document.getElementById('final0').textContent = `P1: ${s0}マス`;
+  document.getElementById('final1').textContent = `P2: ${s1}マス`;
+}
+
+// --- AI ---
+function aiTurn() {
+  if (state.phase !== 'playing' || state.player !== 1) return;
+  // Pick unclaimed piece with most cells (greedy)
+  let best = null, bestSize = -1;
+  for (let pid = 0; pid < state.pieces.length; pid++) {
+    const p = state.pieces[pid];
+    if (p.owner === null && p.cells.length > bestSize) {
+      bestSize = p.cells.length;
+      best = pid;
+    }
+  }
+  if (best !== null) {
+    state.hoverPid = best;
+    draw();
+    setTimeout(() => {
+      state.hoverPid = null;
+      claimPiece(best);
+    }, 300);
+  }
+}
+
+// --- Start game ---
+function startGame(mode) {
+  state.mode = mode;
+  const {board, pieces} = generateBoard();
+  state.board = board;
+  state.pieces = pieces;
+  state.player = 0;
+  state.turns = [0, 0];
+  state.scores = [0, 0];
+  state.abilities = [{xray:true, skip:true},{xray:true, skip:true}];
+  state.hoverPid = null;
+  state.xrayPid = null;
+  state.xrayMode = false;
+  state.phase = 'playing';
+
+  document.getElementById('title-screen').style.display = 'none';
+  const gs = document.getElementById('game-screen');
+  gs.style.display = 'flex';
+
+  if (mode === '1p') {
+    document.querySelector('#pinfo1 h3').textContent = 'P2（AI）';
+  }
+
+  updateUI();
+  draw();
+  setMsg('P1から始めてください');
+}
+</script>
+</body>
+</html>
