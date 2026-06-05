@@ -43,6 +43,20 @@ canvas{cursor:crosshair;display:block;border-radius:4px}
 .abil-btn.active{box-shadow:0 0 0 3px #fff}
 
 .msg-bar{height:28px;font-size:.9rem;color:#fbbf24;text-align:center;font-weight:600}
+.check-btn{padding:6px 16px;background:#4b5563;color:#f3f4f6;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:600;transition:opacity .15s}
+.check-btn:hover{opacity:.8}
+
+/* Piece panel */
+#piece-panel{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;align-items:center;justify-content:center}
+#piece-panel.open{display:flex}
+#panel-inner{background:#1f2937;border-radius:12px;padding:16px;max-height:88vh;display:flex;flex-direction:column;gap:10px}
+#panel-header{display:flex;justify-content:space-between;align-items:center}
+#panel-header span{font-weight:700;font-size:1rem}
+#panel-close{padding:4px 10px;background:#374151;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.9rem}
+#panel-legend{display:flex;gap:16px;font-size:.8rem;color:#9ca3af;align-items:center}
+.legend-solid{display:inline-block;width:14px;height:14px;background:#6b7280;border-radius:2px;vertical-align:middle;margin-right:4px}
+.legend-dash{display:inline-block;width:14px;height:14px;border:2px dashed #6b7280;border-radius:2px;vertical-align:middle;margin-right:4px}
+#panel-scroll{overflow:auto}
 
 /* Gameover */
 #gameover-screen{display:none;flex-direction:column;align-items:center;gap:16px;padding:32px 16px;text-align:center}
@@ -93,7 +107,26 @@ canvas{cursor:crosshair;display:block;border-radius:4px}
       </div>
     </div>
   </div>
+  <div style="text-align:center;margin-top:4px">
+    <button class="check-btn" onclick="openPanel()">📋 ピース確認</button>
+  </div>
   <div class="msg-bar" id="msg-bar"></div>
+</div>
+
+<div id="piece-panel">
+  <div id="panel-inner">
+    <div id="panel-header">
+      <span>取得済みピース一覧</span>
+      <div id="panel-legend">
+        <span><span class="legend-solid"></span>取得済み</span>
+        <span><span class="legend-dash"></span>未取得</span>
+      </div>
+      <button id="panel-close" onclick="closePanel()">✕ 閉じる</button>
+    </div>
+    <div id="panel-scroll">
+      <canvas id="panel-canvas"></canvas>
+    </div>
+  </div>
 </div>
 
 <div id="gameover-screen">
@@ -193,7 +226,7 @@ function generateBoard() {
 
   const pool = [];
   for (let color = 0; color < 4; color++) {
-    for (const shape of SHAPES) pool.push({color, shape, orients: getOrientations(shape)});
+    SHAPES.forEach((shape, si) => pool.push({color, shapeIdx: si, shape, orients: getOrientations(shape)}));
   }
   shuffle(pool);
 
@@ -203,7 +236,7 @@ function generateBoard() {
       if (board[r][c] !== -1 || pool.length === 0) continue;
       let placed = false;
       for (let pi = 0; pi < pool.length && !placed; pi++) {
-        const {color, orients} = pool[pi];
+        const {color, shapeIdx, orients} = pool[pi];
         for (const orient of orients) {
           const minR = Math.min(...orient.map(([row])=>row));
           const topRow = orient.filter(([row])=>row===minR);
@@ -212,7 +245,7 @@ function generateBoard() {
           const cells = orient.map(([or,oc])=>[or+dr, oc+dc]);
           if (cells.every(([cr,cc])=>cr>=0&&cr<GRID&&cc>=0&&cc<GRID&&board[cr][cc]===-1)) {
             for (const [cr,cc] of cells) board[cr][cc] = pid;
-            pieces.push({color, cells, owner:null});
+            pieces.push({color, cells, owner:null, shapeIdx});
             pid++; pool.splice(pi,1); placed = true; break;
           }
         }
@@ -229,7 +262,7 @@ function generateBoard() {
       if (board[r][c] === -1) {
         const color = areas.indexOf(Math.min(...areas));
         board[r][c] = pid;
-        pieces.push({color, cells:[[r,c]], owner:null});
+        pieces.push({color, cells:[[r,c]], owner:null, shapeIdx:0});
         areas[color]++;
         pid++;
       }
@@ -247,7 +280,7 @@ const state = {
   scores: [0, 0],
   abilities: [{xray:true, skip:true}, {xray:true, skip:true}],
   mode: null,
-  hoverPid: null,
+  hoverCell: null,
   xrayPid: null, xrayTimer: null,
   xrayMode: false,  // waiting for click to reveal
   phase: 'title'
@@ -287,8 +320,6 @@ function draw() {
       let fill;
       if (p.owner !== null) {
         fill = PC_DARK[p.color];
-      } else if (pid === state.hoverPid && !state.xrayMode) {
-        fill = PC_HOVER[p.color];
       } else {
         fill = PC[p.color];
       }
@@ -331,12 +362,13 @@ function draw() {
   ctx.lineWidth = 2;
   ctx.strokeRect(0, 0, W, W);
 
-  // Hover highlight
-  if (state.hoverPid !== null && !state.xrayMode) {
-    const p = state.pieces[state.hoverPid];
-    if (p.owner === null) {
-      drawOutline(p.cells, 'rgba(255,255,255,0.85)', 2.5);
-      drawSizeLabel(p.cells);
+  // Single-cell hover highlight
+  if (state.hoverCell && !state.xrayMode) {
+    const [hr, hc] = state.hoverCell;
+    const pid = state.board[hr][hc];
+    if (state.pieces[pid].owner === null) {
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.fillRect(hc*CELL, hr*CELL, CELL, CELL);
     }
   }
 
@@ -348,12 +380,11 @@ function draw() {
     drawSizeLabel(p.cells);
   }
 
-  // Xray mode cursor hint
-  if (state.xrayMode) {
-    if (state.hoverPid !== null) {
-      const p = state.pieces[state.hoverPid];
-      drawFill(p.cells, 'rgba(255,255,255,0.22)');
-    }
+  // Xray mode — single cell cursor hint
+  if (state.xrayMode && state.hoverCell) {
+    const [hr, hc] = state.hoverCell;
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillRect(hc*CELL, hr*CELL, CELL, CELL);
   }
 }
 
@@ -401,14 +432,12 @@ function cellAt(e) {
 
 canvas.addEventListener('mousemove', e => {
   if (state.phase !== 'playing') return;
-  const cell = cellAt(e);
-  const pid = cell ? state.board[cell[0]][cell[1]] : null;
-  state.hoverPid = pid;
+  state.hoverCell = cellAt(e);
   draw();
 });
 
 canvas.addEventListener('mouseleave', () => {
-  state.hoverPid = null;
+  state.hoverCell = null;
   draw();
 });
 
@@ -529,12 +558,110 @@ function aiTurn() {
     }
   }
   if (best !== null) {
-    state.hoverPid = best;
-    draw();
-    setTimeout(() => {
-      state.hoverPid = null;
-      claimPiece(best);
-    }, 300);
+    setTimeout(() => claimPiece(best), 300);
+  }
+}
+
+// --- Piece confirmation panel ---
+const COLOR_NAMES = ['黄', '赤', '青', '緑'];
+const PANEL_CELL = 7;
+const SLOT_W = 60;
+const SLOT_H = 50;
+const COLS_PER_COLOR = 2;
+const ROWS_PER_COLOR = Math.ceil(21 / COLS_PER_COLOR); // 11
+const COL_W = 140;
+const COL_GAP = 5;
+const PANEL_W = 4 * COL_W + 3 * COL_GAP;
+const PANEL_H = 26 + ROWS_PER_COLOR * SLOT_H + 10;
+
+function openPanel() {
+  const panel = document.getElementById('piece-panel');
+  panel.classList.add('open');
+  drawPanel();
+}
+
+function closePanel() {
+  document.getElementById('piece-panel').classList.remove('open');
+}
+
+document.getElementById('piece-panel').addEventListener('click', e => {
+  if (e.target === document.getElementById('piece-panel')) closePanel();
+});
+
+function drawPanel() {
+  const pc = document.getElementById('panel-canvas');
+  pc.width = PANEL_W;
+  pc.height = PANEL_H;
+  const cx = pc.getContext('2d');
+  cx.fillStyle = '#111827';
+  cx.fillRect(0, 0, PANEL_W, PANEL_H);
+
+  for (let colorIdx = 0; colorIdx < 4; colorIdx++) {
+    const colX = colorIdx * (COL_W + COL_GAP);
+
+    // Color header
+    cx.fillStyle = PC[colorIdx];
+    cx.font = 'bold 13px sans-serif';
+    cx.fillText(COLOR_NAMES[colorIdx], colX + 4, 18);
+
+    // Collect pieces by shapeIdx; prefer claimed over unclaimed
+    const byShape = new Array(21).fill(null);
+    if (state.pieces) {
+      for (const p of state.pieces) {
+        if (p.color !== colorIdx || p.shapeIdx >= 21) continue;
+        const si = p.shapeIdx;
+        if (byShape[si] === null || (p.owner !== null && byShape[si].owner === null)) {
+          byShape[si] = p;
+        }
+      }
+    }
+
+    for (let si = 0; si < 21; si++) {
+      const slotCol = si % COLS_PER_COLOR;
+      const slotRow = Math.floor(si / COLS_PER_COLOR);
+      const sx = colX + slotCol * SLOT_W;
+      const sy = 26 + slotRow * SLOT_H;
+
+      const piece = byShape[si];
+      const shape = SHAPES[si];
+
+      // Bounding box of canonical shape
+      const rs = shape.map(([r]) => r);
+      const cs = shape.map(([, c]) => c);
+      const bH = Math.max(...rs) - Math.min(...rs) + 1;
+      const bW = Math.max(...cs) - Math.min(...cs) + 1;
+      const cellSz = Math.min(Math.floor((SLOT_H - 8) / bH), Math.floor((SLOT_W - 8) / bW), 9);
+      const offX = sx + Math.floor((SLOT_W - bW * cellSz) / 2);
+      const offY = sy + Math.floor((SLOT_H - bH * cellSz) / 2);
+      const minR = Math.min(...rs);
+      const minC = Math.min(...cs);
+
+      const claimed = piece && piece.owner !== null;
+
+      if (claimed) {
+        // Solid fill
+        cx.fillStyle = PC[colorIdx];
+        for (const [r, c] of shape) {
+          cx.fillRect(offX + (c - minC) * cellSz, offY + (r - minR) * cellSz, cellSz - 1, cellSz - 1);
+        }
+        // Owner dot
+        cx.fillStyle = PL[piece.owner];
+        const cxCenter = offX + Math.floor(bW / 2) * cellSz + cellSz / 2;
+        const cyCenter = offY + Math.floor(bH / 2) * cellSz + cellSz / 2;
+        cx.beginPath();
+        cx.arc(cxCenter, cyCenter, 2.5, 0, Math.PI * 2);
+        cx.fill();
+      } else {
+        // Dashed outline only
+        cx.strokeStyle = PC[colorIdx];
+        cx.lineWidth = 1;
+        cx.setLineDash([3, 3]);
+        for (const [r, c] of shape) {
+          cx.strokeRect(offX + (c - minC) * cellSz + 0.5, offY + (r - minR) * cellSz + 0.5, cellSz - 1, cellSz - 1);
+        }
+        cx.setLineDash([]);
+      }
+    }
   }
 }
 
@@ -548,7 +675,7 @@ function startGame(mode) {
   state.turns = [0, 0];
   state.scores = [0, 0];
   state.abilities = [{xray:true, skip:true},{xray:true, skip:true}];
-  state.hoverPid = null;
+  state.hoverCell = null;
   state.xrayPid = null;
   state.xrayMode = false;
   state.phase = 'playing';
